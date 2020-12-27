@@ -1,0 +1,13 @@
+dec (client)
+
+while true
+lock (read lock) str1
+if string changed
+	count = 0
+unlock (read lock) str1
+
+try crack string
+if printable
+	print sending to server + count
+	add to queue
+	send signal

@@ -1,0 +1,17 @@
+enc (server)
+
+while true
+if ! quque.is_empty()
+	lock (write lock) str1
+	bool is_success
+	while !queue.is_empty()
+		dequeue
+		if success
+			print success
+			is_success = true
+		else
+			print fail
+	if is_sucess
+		st1 = new string
+	unlock (write lock) str1
+		
