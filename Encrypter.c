@@ -27,7 +27,7 @@ _Noreturn void Encrypter_Run(ConcurrentQueue *queue, char *encryptedString, int 
     char* key = (char*)malloc(strLength/8 + 1);
     time_t lastRecycle;
 
-    RecycleData(encryptedString, strLength, clearString, key);
+    RecycleData(encryptedString, strLength, clearString, key, &lastRecycle);
 
     while (TRUE)
     {
@@ -60,7 +60,7 @@ _Noreturn void Encrypter_Run(ConcurrentQueue *queue, char *encryptedString, int 
             }
             if (isDecrypted)
             {
-                RecycleData(encryptedString,strLength,clearString,key);
+                RecycleData(encryptedString,strLength,clearString,key, &lastRecycle);
             }
 
             pthread_rwlock_unlock(lock);
@@ -68,7 +68,7 @@ _Noreturn void Encrypter_Run(ConcurrentQueue *queue, char *encryptedString, int 
 
         if (timeoutSeconds > 0 && difftime(time(NULL), lastRecycle) > timeoutSeconds)
         {
-            RecycleData(encryptedString,strLength,clearString,key,lastRecycle);
+            RecycleData(encryptedString,strLength,clearString,key, &lastRecycle);
         }
     }
 

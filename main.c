@@ -8,10 +8,5 @@
 
 
 int main() {
-    char str[9];
-    do {
-        MTA_get_rand_data(str,8);
-    }
-
-    printf("%s\n",str);
+    printf("hello!");
 }
