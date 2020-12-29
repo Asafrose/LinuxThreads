@@ -3,4 +3,4 @@ project(LinuxThreads C)
 
 set(CMAKE_C_STANDARD 99)
 
-add_executable(LinuxThreads main.c)
+add_executable(LinuxThreads main.c ConcurrentQueue.c ConcurrentQueue.h)
