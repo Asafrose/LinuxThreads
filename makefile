@@ -23,6 +23,11 @@ $(MainDestination) : $(MainSource) $(HelperTargets)
 
 all: $(MainDestination) $(HelperTargets)
 
+InstallDeps:
+	cd /tmp
+	wget https://github.com/gavrielk/LinuxCourseCodePub/raw/master/mta_crypt_lib/mta-utils-dev.deb
+	sudo dpkg --install mta-utils-dev.deb
+
 .PHONY: clean
 clean:
 	rm -rf $(OutDir)
