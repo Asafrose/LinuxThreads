@@ -6,4 +6,6 @@
 #define LINUXTHREADS_COMMON_H
 int IsPrintable(char* str, int size);
 
+void InitArray(char* arr, int size);
+
 #endif //LINUXTHREADS_COMMON_H

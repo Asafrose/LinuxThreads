@@ -10,6 +10,8 @@
 void ConcurrentQueue_Init(ConcurrentQueue *queue) {
     queue->Head = NULL;
     queue->Tail = NULL;
+
+    pthread_mutex_init(&queue->Mutex, NULL);
 }
 
 int ConcurrentQueue_IsEmpty(ConcurrentQueue *queue) {

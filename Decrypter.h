@@ -8,6 +8,17 @@
 #include <sys/types.h>
 #include "ConcurrentQueue.h"
 
-void Decrypter_Run(ConcurrentQueue *queue, char *encryptedString, int strLength, int id, pthread_rwlock_t *lock);
+typedef struct decrypterArguments {
+    ConcurrentQueue *Queue;
+    char *EncryptedData;
+    int* EncryptedDataLength;
+    int StrLength;
+    int Id;
+    pthread_rwlock_t *Lock;
+    pthread_mutex_t *shouldStartLock;
+    pthread_cond_t *shouldStartCondition;
+} DecrypterArguments;
+
+void* Decrypter_Run(void* decrypterArgumentsVoid);
 
 #endif //LINUXTHREADS_DECRYPTER_H

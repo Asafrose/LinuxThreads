@@ -13,45 +13,65 @@
 #include "Decrypter.h"
 #include "Common.h"
 
-_Noreturn void Decrypter_Run(ConcurrentQueue *queue, char *encryptedString, int strLength, int id, pthread_rwlock_t *lock) {
-    while (encryptedString[0] == '\0')
-    {
-        sleep(0.1);
-        printf("Alon efes %d", id);
-    }
+void WaitForEncryptor(const DecrypterArguments *decrypterArguments);
 
-    char* lastKnownString = (char*)malloc(strLength + 1);
-    char* decryptedString = (char*)malloc(strLength + 1);
-    char* guessedKey = (char*)malloc(strLength/8 + 1);
+_Noreturn void* Decrypter_Run(void* decrypterArgumentsVoid) {
+    DecrypterArguments* decrypterArguments = (DecrypterArguments*)decrypterArgumentsVoid;
+    printf("Dcrypter started [id=%d]\n", decrypterArguments->Id);
 
-    memcpy(lastKnownString, encryptedString, strLength);
+
+    WaitForEncryptor(decrypterArguments);
+
+    int decryptedStringLength;
+    char decryptedString[4096];
+    char lastKnownEncryptedData[4096];
+    InitArray(decryptedString, 4096);
+    InitArray(lastKnownEncryptedData, 4096);
+
+    int lastKnownEncryptedDataLength = *decrypterArguments->EncryptedDataLength;
+    char* guessedKey = (char*)malloc(decrypterArguments->StrLength/8 + 1);
+
+    memcpy(lastKnownEncryptedData, decrypterArguments->EncryptedData, *decrypterArguments->EncryptedDataLength);
     int counter = 0;
     while (TRUE)
     {
-        pthread_rwlock_rdlock(lock);
-        if (memcmp(lastKnownString,encryptedString, strLength) != 0)
+        pthread_rwlock_rdlock(decrypterArguments->Lock);
+        if (*decrypterArguments->EncryptedDataLength != lastKnownEncryptedDataLength || memcmp(lastKnownEncryptedData, decrypterArguments->EncryptedData, *decrypterArguments->EncryptedDataLength) != 0)
         {
             counter = 0;
-            memcpy(lastKnownString, encryptedString, strLength);
+            memcpy(lastKnownEncryptedData, decrypterArguments->EncryptedData, *decrypterArguments->EncryptedDataLength);
+            lastKnownEncryptedDataLength = *decrypterArguments->EncryptedDataLength;
+
+            printf("Encrypted data was reset [id=%d]\n", decrypterArguments->Id);
         }
-        pthread_rwlock_unlock(lock);
+        pthread_rwlock_unlock(decrypterArguments->Lock);
 
         counter++;
-        MTA_get_rand_data(guessedKey,strLength/8);
-        MTA_decrypt(guessedKey,strLength/8,lastKnownString, strLength, decryptedString, strLength);
+        MTA_get_rand_data(guessedKey,decrypterArguments->StrLength/8);
+        MTA_decrypt(guessedKey,decrypterArguments->StrLength/8, lastKnownEncryptedData, lastKnownEncryptedDataLength, decryptedString, &decryptedStringLength);
 
-        if (IsPrintable(decryptedString,strLength))
+        if (IsPrintable(decryptedString,decryptedStringLength))
         {
-            printf("Decrypter %d found printable string %s after %d retries", id, decryptedString, counter);
+            printf("Decrypter %d found printable string %s after %d retries\n", decrypterArguments->Id, decryptedString, counter);
             QueueData data;
-            data.DecrypterId = id;
-            data.Payload = (char*)malloc(strLength+1);
+            data.DecrypterId = decrypterArguments->Id;
+            data.Payload = (char*)malloc(decryptedStringLength);
             strcpy(data.Payload,decryptedString);
-            ConcurrentQueue_Enqueue(queue,data);
+            ConcurrentQueue_Enqueue(decrypterArguments->Queue,data);
         }
     }
 
-    free(lastKnownString);
-    free(decryptedString);
     free(guessedKey);
+}
+
+void WaitForEncryptor(const DecrypterArguments *decrypterArguments) {
+
+    pthread_mutex_lock(decrypterArguments->shouldStartLock);
+    if (decrypterArguments->EncryptedDataLength == 0)
+    {
+        printf("Waiting for start signal [id=%d]\n", decrypterArguments->Id);
+        pthread_cond_wait(decrypterArguments->shouldStartCondition, decrypterArguments->shouldStartLock);
+        printf("Start signal recieved [id=%d]\n", decrypterArguments->Id);
+    }
+    pthread_mutex_unlock(decrypterArguments->shouldStartLock);
 }

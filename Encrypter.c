@@ -12,63 +12,61 @@
 #include "Encrypter.h"
 #include "Common.h"
 
-void RecycleData(const char *encryptedString, int strLength, const char *clearString, const char *key, time_t* lastRecycle);
+void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key, time_t* lastRecycle);
 
 void CreatePrintableString(char* str, int length)
 {
-    do
+    for (int i = 0; i < length; ++i)
     {
-        MTA_get_rand_data(str,length);
-    } while (!IsPrintable(str, length));
+        char c;
+        do {
+           c = MTA_get_rand_char();
+        } while (!isprint(c));
+
+        str[i] = c;
+    }
+
+    str[length] = '\0';
 }
-_Noreturn void Encrypter_Run(ConcurrentQueue *queue, char *encryptedString, int strLength, pthread_rwlock_t *lock, unsigned int timeoutSeconds)
+
+_Noreturn void* Encrypter_Run(void* encrypterArgumentsVoid)
 {
-    char* clearString = (char*)malloc(strLength + 1);
-    char* key = (char*)malloc(strLength/8 + 1);
+    printf("Encrypter started\n");
+    EncrypterArguments* encrypterArguments = (EncrypterArguments*)encrypterArgumentsVoid;
+    char* clearString = (char*)malloc(encrypterArguments->StrLength + 1);
+    char* key = (char*)malloc(encrypterArguments->StrLength/8 + 1);
     time_t lastRecycle;
 
-    RecycleData(encryptedString, strLength, clearString, key, &lastRecycle);
+    pthread_mutex_lock(encrypterArguments->shouldStartLock);
+    RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key, &lastRecycle);
+    pthread_mutex_unlock(encrypterArguments->shouldStartLock);
 
+    pthread_cond_broadcast(encrypterArguments->shouldStartCondition);
     while (TRUE)
     {
-        if (!ConcurrentQueue_IsEmpty(queue))
+        if (!ConcurrentQueue_IsEmpty(encrypterArguments->Queue))
         {
-            pthread_rwlock_wrlock(lock);
-            int isDecrypted = FALSE;
-            while (!ConcurrentQueue_IsEmpty(queue))
+            pthread_rwlock_wrlock(encrypterArguments->Lock);
+            QueueData data = ConcurrentQueue_Dequeue(encrypterArguments->Queue);
+            if (strcmp(clearString, data.Payload) == 0)
             {
-                QueueData data = ConcurrentQueue_Dequeue(queue);
-                if (strcmp(clearString, data.Payload) == 0)
-                {
-                    if (isDecrypted)
-                    {
-                        printf("String successfully decrypted by decrypter %d buy its too late", data.DecrypterId);
-                    }
-                    else
-                    {
-                        printf("String successfully decrypted by decrypter %d which won the race", data.DecrypterId);
-                    }
-
-                    isDecrypted = TRUE;
-                }
-                else
-                {
-                    printf("Recevied wrong string from decrypter %d [clearString=%s, payload=%s]", data.DecrypterId, clearString, data.Payload);
-                }
-
-                free(data.Payload);
+                printf("String successfully decrypted by decrypter %d which won the race\n", data.DecrypterId);
+                RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key, &lastRecycle);
             }
-            if (isDecrypted)
+            else
             {
-                RecycleData(encryptedString,strLength,clearString,key, &lastRecycle);
+                printf("Received wrong string from decrypter %d [clearString=%s, payload=%s]\n", data.DecrypterId, clearString, data.Payload);
             }
 
-            pthread_rwlock_unlock(lock);
+            free(data.Payload);
+            pthread_rwlock_unlock(encrypterArguments->Lock);
         }
 
-        if (timeoutSeconds > 0 && difftime(time(NULL), lastRecycle) > timeoutSeconds)
+        if (encrypterArguments->TimeoutSeconds > 0 && difftime(time(NULL), lastRecycle) > encrypterArguments->TimeoutSeconds)
         {
-            RecycleData(encryptedString,strLength,clearString,key, &lastRecycle);
+            pthread_rwlock_wrlock(encrypterArguments->Lock);
+            RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key, &lastRecycle);
+            pthread_rwlock_unlock(encrypterArguments->Lock);
         }
     }
 
@@ -76,12 +74,12 @@ _Noreturn void Encrypter_Run(ConcurrentQueue *queue, char *encryptedString, int 
     free(key);
 }
 
-void RecycleData(const char *encryptedString, int strLength, const char *clearString, const char *key, time_t* lastRecycle) {
+void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key, time_t* lastRecycle) {
     CreatePrintableString(clearString, strLength);
     MTA_get_rand_data(key,strLength/8);
-    MTA_encrypt(key,strLength/8, clearString, strLength, encryptedString, strLength);
+    MTA_encrypt(key,strLength/8, clearString, strLength, encryptedData, encryptedDataLength);
     time(lastRecycle);
-    printf("Recycled data [clearString=%s]", clearString);
+    printf("Recycled data [clearString=%s]\n", clearString);
 }
 
 

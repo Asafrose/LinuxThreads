@@ -16,3 +16,9 @@ int IsPrintable(char *str, int size) {
 
     return TRUE;
 }
+
+void InitArray(char *arr, int size) {
+    for (int i = 0; i < size; ++i) {
+        arr[i] = 0;
+    }
+}
