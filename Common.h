@@ -4,6 +4,10 @@
 
 #ifndef LINUXTHREADS_COMMON_H
 #define LINUXTHREADS_COMMON_H
+
+#define FALSE 0
+#define TRUE 1
+
 int IsPrintable(char* str, int size);
 
 void InitArray(char* arr, int size);

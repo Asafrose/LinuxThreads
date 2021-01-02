@@ -3,10 +3,8 @@
 //
 
 #include <unistd.h>
-#include <z3.h>
 #include <malloc.h>
 #include <memory.h>
-#include <curses.h>
 #include <pthread.h>
 #include <mta_rand.h>
 #include <mta_crypt.h>

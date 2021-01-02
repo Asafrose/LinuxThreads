@@ -3,7 +3,6 @@
 //
 
 #include <ctype.h>
-#include <curses.h>
 #include "Common.h"
 int IsPrintable(char *str, int size) {
     for (int i = 0; i < size; ++i)

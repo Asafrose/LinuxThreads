@@ -2,7 +2,6 @@
 // Created by asrosent on 12/29/2020.
 //
 
-#include <curses.h>
 #include <ctype.h>
 #include <mta_rand.h>
 #include <mta_crypt.h>

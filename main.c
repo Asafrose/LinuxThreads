@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <stdlib.h>
-#include <curses.h>
 #include <pthread.h>
+#include <limits.h>
 #include "ConcurrentQueue.h"
 #include "Encrypter.h"
 #include "Decrypter.h"
@@ -13,7 +13,7 @@ void ParseArgs(int argc, char* argv[], int* numberOfDecryptors, int* strLength, 
     int numberOfDecryptorsProvided = FALSE;
     int strLengthProvided = FALSE;
 
-    *timeout = INT32_MAX;
+    *timeout = INT_MAX;
 
     char c;
     while ((c = getopt(argc, argv, "n:l:t:")) != -1)
