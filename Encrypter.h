@@ -16,6 +16,8 @@ typedef struct encrypterArguments {
     unsigned int TimeoutSeconds;
     pthread_mutex_t *shouldStartLock;
     pthread_cond_t *shouldStartCondition;
+    pthread_mutex_t *isEmptyLock;
+    pthread_cond_t *isEmptyCondition;
 } EncrypterArguments;
 
 void* Encrypter_Run(void* encrypterArgumentsVoid);

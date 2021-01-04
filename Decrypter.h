@@ -17,6 +17,8 @@ typedef struct decrypterArguments {
     pthread_rwlock_t *Lock;
     pthread_mutex_t *shouldStartLock;
     pthread_cond_t *shouldStartCondition;
+    pthread_mutex_t *isEmptyLock;
+    pthread_cond_t *isEmptyCondition;
 } DecrypterArguments;
 
 void* Decrypter_Run(void* decrypterArgumentsVoid);

@@ -17,7 +17,6 @@ _Noreturn void* Decrypter_Run(void* decrypterArgumentsVoid) {
     DecrypterArguments* decrypterArguments = (DecrypterArguments*)decrypterArgumentsVoid;
     printf("Dcrypter started [id=%d]\n", decrypterArguments->Id);
 
-
     WaitForEncryptor(decrypterArguments);
 
     int decryptedStringLength;
@@ -51,11 +50,15 @@ _Noreturn void* Decrypter_Run(void* decrypterArgumentsVoid) {
         if (IsPrintable(decryptedString,decryptedStringLength))
         {
             printf("Decrypter %d found printable string %s after %d retries\n", decrypterArguments->Id, decryptedString, counter);
+            pthread_mutex_lock(decrypterArguments->isEmptyLock);
             QueueData data;
             data.DecrypterId = decrypterArguments->Id;
             data.Payload = (char*)malloc(decryptedStringLength);
             strcpy(data.Payload,decryptedString);
             ConcurrentQueue_Enqueue(decrypterArguments->Queue,data);
+            pthread_mutex_unlock(decrypterArguments->isEmptyLock);
+
+            pthread_cond_broadcast(decrypterArguments->isEmptyCondition);
         }
     }
 
@@ -65,7 +68,7 @@ _Noreturn void* Decrypter_Run(void* decrypterArgumentsVoid) {
 void WaitForEncryptor(const DecrypterArguments *decrypterArguments) {
 
     pthread_mutex_lock(decrypterArguments->shouldStartLock);
-    if (decrypterArguments->EncryptedDataLength == 0)
+    if (*decrypterArguments->EncryptedDataLength == 0)
     {
         printf("Waiting for start signal [id=%d]\n", decrypterArguments->Id);
         pthread_cond_wait(decrypterArguments->shouldStartCondition, decrypterArguments->shouldStartLock);

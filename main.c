@@ -76,6 +76,10 @@ int main(int argc, char* argv[]) {
     pthread_mutex_init(&shouldStartLock, NULL);
     pthread_cond_t shouldStartCondition;
     pthread_cond_init(&shouldStartCondition, NULL);
+    pthread_mutex_t isEmptyLock;
+    pthread_mutex_init(&isEmptyLock, NULL);
+    pthread_cond_t isEmptyCondition;
+    pthread_cond_init(&isEmptyCondition, NULL);
     ConcurrentQueue queue;
     ConcurrentQueue_Init(&queue);
 
@@ -93,6 +97,8 @@ int main(int argc, char* argv[]) {
     encrypterArguments.TimeoutSeconds = timeout;
     encrypterArguments.shouldStartLock = &shouldStartLock;
     encrypterArguments.shouldStartCondition = &shouldStartCondition;
+    encrypterArguments.isEmptyLock = &isEmptyLock;
+    encrypterArguments.isEmptyCondition = &isEmptyCondition;
 
     pthread_create(&encrypterThread, NULL, Encrypter_Run, &encrypterArguments);
 
@@ -108,6 +114,8 @@ int main(int argc, char* argv[]) {
         decrypterArguments[i].shouldStartLock = &shouldStartLock;
         decrypterArguments[i].shouldStartCondition = &shouldStartCondition;
         decrypterArguments[i].Id = i;
+        decrypterArguments[i].isEmptyLock = &isEmptyLock;
+        decrypterArguments[i].isEmptyCondition = &isEmptyCondition;
 
         pthread_create(&decryptorThreads[i], NULL, Decrypter_Run, &decrypterArguments[i]);
     }
