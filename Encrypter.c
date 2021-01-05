@@ -13,7 +13,8 @@
 #include "Encrypter.h"
 #include "Common.h"
 
-void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key);
+void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key,
+                 struct timespec* timeout, unsigned int timeoutSeconds, time_t* lastRecycle);
 
 void CreatePrintableString(char* str, int length)
 {
@@ -37,8 +38,11 @@ _Noreturn void* Encrypter_Run(void* encrypterArgumentsVoid)
     char* clearString = (char*)malloc(encrypterArguments->StrLength + 1);
     char* key = (char*)malloc(encrypterArguments->StrLength/8 + 1);
 
+    struct timespec timeout;
+    time_t lastRecycle;
     pthread_mutex_lock(encrypterArguments->shouldStartLock);
-    RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key);
+    RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
+                &timeout, encrypterArguments->TimeoutSeconds, &lastRecycle);
     pthread_mutex_unlock(encrypterArguments->shouldStartLock);
 
     pthread_cond_broadcast(encrypterArguments->shouldStartCondition);
@@ -47,18 +51,16 @@ _Noreturn void* Encrypter_Run(void* encrypterArgumentsVoid)
     {
         if (ConcurrentQueue_IsEmpty(encrypterArguments->Queue))
         {
-            struct timespec timeout;
-            clock_gettime(CLOCK_REALTIME, &timeout);
-            timeout.tv_sec += encrypterArguments->TimeoutSeconds;
-
             pthread_mutex_lock(encrypterArguments->isEmptyLock);
             int waitResult = pthread_cond_timedwait(encrypterArguments->isEmptyCondition, encrypterArguments->isEmptyLock, &timeout);
             pthread_mutex_unlock(encrypterArguments->isEmptyLock);
 
             if (waitResult == ETIMEDOUT)
             {
+                printf("There was no correct answer in the permitted time");
                 pthread_rwlock_wrlock(encrypterArguments->Lock);
-                RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key);
+                RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
+                            &timeout, encrypterArguments->TimeoutSeconds, &lastRecycle);
                 pthread_rwlock_unlock(encrypterArguments->Lock);
                 continue;
             }
@@ -69,11 +71,20 @@ _Noreturn void* Encrypter_Run(void* encrypterArgumentsVoid)
         if (strcmp(clearString, data.Payload) == 0)
         {
             printf("String successfully decrypted by decrypter %d which won the race\n", data.DecrypterId);
-            RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key);
+            RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
+                        &timeout, encrypterArguments->TimeoutSeconds, &lastRecycle);
         }
         else
         {
             printf("Received wrong string from decrypter %d [clearString=%s, payload=%s]\n", data.DecrypterId, clearString, data.Payload);
+        }
+
+        // check if there was no correct answer
+        if (encrypterArguments->TimeoutSeconds > 0 && difftime(time(NULL), lastRecycle) > encrypterArguments->TimeoutSeconds)
+        {
+            printf("There was no correct answer in the permitted time");
+            RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
+                        &timeout, encrypterArguments->TimeoutSeconds,  &lastRecycle);
         }
 
         free(data.Payload);
@@ -84,10 +95,14 @@ _Noreturn void* Encrypter_Run(void* encrypterArgumentsVoid)
     free(key);
 }
 
-void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key) {
+void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key,
+                 struct timespec* timeout, unsigned int timeoutSeconds, time_t* lastRecycle) {
     CreatePrintableString(clearString, strLength);
     MTA_get_rand_data(key,strLength/8);
     MTA_encrypt(key,strLength/8, clearString, strLength, encryptedData, encryptedDataLength);
+    clock_gettime(CLOCK_REALTIME, timeout);
+    timeout->tv_sec += timeoutSeconds;
+    time(lastRecycle);
 
     printf("Recycled data [clearString=%s]\n", clearString);
 }
