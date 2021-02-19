@@ -165,7 +165,7 @@ void main(int argc, char* argv[])
         struct timespec tm;
         clock_gettime(CLOCK_REALTIME, &tm);
         tm.tv_sec += timeout;
-        ssize_t receiveResult = mq_timedreceive(serverQueue,(char*) &request, sizeof(ServerRequest), 0, &tm);
+        ssize_t receiveResult = mq_timedreceive(serverQueue, &request, sizeof(ServerRequest), 0, &tm);
 
         if (receiveResult == -1)
         {
@@ -194,7 +194,7 @@ void SendCurrentData(mqd_t queue)
     msg.StringLength = StrLength;
     memcpy(msg.EncryptedData, EncryptedData, EncryptedDataLength);
 
-    mq_send(queue,(char*) &msg, sizeof(NewPasswordMessage), 0);
+    mq_send(queue, &msg, sizeof(NewPasswordMessage), 0);
 }
 
 void RecycleData() {

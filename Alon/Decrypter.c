@@ -64,7 +64,7 @@ void ParseArgs(int argc, char* argv[], int* id, int* rounds)
 void ReceiveFromEncryptor(mqd_t clientMessageQueue)
 {
     NewPasswordMessage message;
-    mq_receive(clientMessageQueue, (char*)&message, sizeof(NewPasswordMessage), 0);
+    mq_receive(clientMessageQueue, &message, sizeof(NewPasswordMessage), 0);
 
     EncryptedDataLength = message.EncryptedDataLength;
     memcpy(EncryptedData, message.EncryptedData, EncryptedDataLength);
@@ -118,7 +118,7 @@ void main(int argc, char* argv[]) {
     strcpy(connectionRequest.Payload,clientMessageQueueName);
 
     printf("sending to server started\n");
-    int res = mq_send(serverMessageQueue,(char*)&connectionRequest, sizeof(ServerRequest), 0);
+    int res = mq_send(serverMessageQueue,&connectionRequest, sizeof(ServerRequest), 0);
     printf("sending to server finished\n");
     if( res == -1 )
     {
@@ -150,7 +150,7 @@ void main(int argc, char* argv[]) {
             guess.DecrypterId = Id;
             strcpy(guess.Payload, decryptedString);
 
-            mq_send(serverMessageQueue,(char*)&guess, sizeof(ServerRequest), 0);
+            mq_send(serverMessageQueue,&guess, sizeof(ServerRequest), 0);
             rounds--;
         }
     }
@@ -160,7 +160,7 @@ void main(int argc, char* argv[]) {
     disconnectRequest.Type = Disconnect;
     disconnectRequest.DecrypterId = Id;
     strcpy(disconnectRequest.Payload, clientMessageQueueName);
-    mq_send(serverMessageQueue,(char*)&disconnectRequest, sizeof(ServerRequest), 0);
+    mq_send(serverMessageQueue,&disconnectRequest, sizeof(ServerRequest), 0);
 
     mq_close(serverMessageQueue);
     mq_close(clientMessageQueue);
