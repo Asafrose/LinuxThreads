@@ -8,7 +8,7 @@
 #define FALSE 0
 #define TRUE 1
 
-#define ServerQueueName "ServerQueue"
+#define ServerQueueName "/ServerQueue"
 
 typedef enum messageType{
     Connect,
