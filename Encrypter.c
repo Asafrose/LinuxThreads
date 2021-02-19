@@ -10,11 +10,62 @@
 #include <memory.h>
 #include <malloc.h>
 #include <time.h>
-#include "Encrypter.h"
+#include <mqueue.h>
+#include <getopt.h>
+#include <limits.h>
+#include <stdlib.h>
 #include "Common.h"
+#include "LinkedList.h"
 
-void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key,
-                 struct timespec* timeout, unsigned int timeoutSeconds, time_t* lastRecycle);
+char* Key;
+char* ClearString;
+int StrLength;
+char EncryptedData[1024];
+int EncryptedDataLength;
+List Queues;
+
+void RecycleData();
+void SendCurrentData(mqd_t queue);
+
+void ParseArgs(int argc, char* argv[], int* strLength, int* timeout)
+{
+    int strLengthProvided = FALSE;
+
+    *timeout = INT_MAX;
+
+    char c;
+    while ((c = getopt(argc, argv, "l:t:")) != -1)
+    {
+        switch (c)
+        {
+            case 'l':
+                if (optarg == NULL)
+                {
+                    printf("You must provide value for string length\n");
+                    exit(1);
+                }
+                *strLength = atoi(optarg);
+                strLengthProvided = TRUE;
+                break;
+            case 't':
+                if (optarg == NULL)
+                {
+                    printf("You must provide value for timeout\n");
+                    exit(1);
+                }
+                *timeout = atoi(optarg);
+                break;
+            default:
+                printf("Unsupported Flag %c with value %s\n", c, optarg != NULL ? optarg : "(NULL)");
+        }
+    }
+
+    if (!strLengthProvided)
+    {
+        printf("You must provide value for string length\n");
+        exit(1);
+    }
+}
 
 void CreatePrintableString(char* str, int length)
 {
@@ -31,80 +82,113 @@ void CreatePrintableString(char* str, int length)
     str[length] = '\0';
 }
 
-_Noreturn void* Encrypter_Run(void* encrypterArgumentsVoid)
+void HandleConnect(ServerRequest* request)
 {
+    mqd_t queue = mq_open(request->Payload, O_WRONLY);
+
+    List_Add(&Queues, queue, request->Payload, request->DecrypterId);
+
+    SendCurrentData(queue);
+}
+
+void HandleGuess(ServerRequest* request)
+{
+    if (strcmp(ClearString, request->Payload) == 0)
+    {
+        printf("String successfully decrypted by decrypter %d which won the race\n", request->DecrypterId);
+        RecycleData();
+    }
+    else
+    {
+        printf("Received wrong string from decrypter %d [clearString=%s, payload=%s]\n", request->DecrypterId, ClearString, request->Payload);
+    }
+}
+
+void HandleDisconnect(ServerRequest* request)
+{
+    List_Remove(&Queues, request->DecrypterId);
+}
+
+void HandleMessage(ServerRequest* request)
+{
+    switch (request->Type)
+    {
+        case Connect:
+            HandleConnect(request);
+            break;
+        case Guess:
+            HandleGuess(request);
+            break;
+        case Disconnect:
+            HandleDisconnect(request);
+            break;
+        default:
+            printf("SQL Injection detected! OMFG!! panic!!!!");
+            exit(1);
+    }
+}
+
+
+void main(int argc, char* argv[])
+{
+    int timeout;
+    ParseArgs(argc,argv,&StrLength,&timeout);
+    List_Init(&Queues);
+
+    mq_unlink(ServerQueueName);
+    mqd_t serverQueue = mq_open(ServerQueueName,O_RDONLY | O_CREAT);
+
     printf("Encrypter started\n");
-    EncrypterArguments* encrypterArguments = (EncrypterArguments*)encrypterArgumentsVoid;
-    char* clearString = (char*)malloc(encrypterArguments->StrLength + 1);
-    char* key = (char*)malloc(encrypterArguments->StrLength/8 + 1);
+    ClearString = (char*)malloc(StrLength + 1);
+    Key = (char*)malloc(StrLength/8 + 1);
 
-    struct timespec timeout;
-    time_t lastRecycle;
-    pthread_mutex_lock(encrypterArguments->shouldStartLock);
-    RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
-                &timeout, encrypterArguments->TimeoutSeconds, &lastRecycle);
-    pthread_mutex_unlock(encrypterArguments->shouldStartLock);
-
-    pthread_cond_broadcast(encrypterArguments->shouldStartCondition);
+    RecycleData();
 
     while (TRUE)
     {
-        if (ConcurrentQueue_IsEmpty(encrypterArguments->Queue))
-        {
-            pthread_mutex_lock(encrypterArguments->isEmptyLock);
-            int waitResult = pthread_cond_timedwait(encrypterArguments->isEmptyCondition, encrypterArguments->isEmptyLock, &timeout);
-            pthread_mutex_unlock(encrypterArguments->isEmptyLock);
+        ServerRequest request;
+        struct timespec tm;
+        clock_gettime(CLOCK_REALTIME, &tm);
+        tm.tv_sec += timeout;
+        ssize_t receiveResult = mq_timedreceive(serverQueue, &request, sizeof(ServerRequest), 0, &tm);
 
-            if (waitResult == ETIMEDOUT)
-            {
-                printf("There was no correct answer in the permitted time");
-                pthread_rwlock_wrlock(encrypterArguments->Lock);
-                RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
-                            &timeout, encrypterArguments->TimeoutSeconds, &lastRecycle);
-                pthread_rwlock_unlock(encrypterArguments->Lock);
-                continue;
-            }
-        }
-
-        pthread_rwlock_wrlock(encrypterArguments->Lock);
-        QueueData data = ConcurrentQueue_Dequeue(encrypterArguments->Queue);
-        if (strcmp(clearString, data.Payload) == 0)
+        if (receiveResult == ETIMEDOUT)
         {
-            printf("String successfully decrypted by decrypter %d which won the race\n", data.DecrypterId);
-            RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
-                        &timeout, encrypterArguments->TimeoutSeconds, &lastRecycle);
+            RecycleData();
         }
         else
         {
-            printf("Received wrong string from decrypter %d [clearString=%s, payload=%s]\n", data.DecrypterId, clearString, data.Payload);
+            HandleMessage(&request);
         }
-
-        // check if there was no correct answer
-        if (encrypterArguments->TimeoutSeconds > 0 && difftime(time(NULL), lastRecycle) > encrypterArguments->TimeoutSeconds)
-        {
-            printf("There was no correct answer in the permitted time");
-            RecycleData(encrypterArguments->EncryptedData, encrypterArguments->EncryptedDataLength, encrypterArguments->StrLength, clearString, key,
-                        &timeout, encrypterArguments->TimeoutSeconds,  &lastRecycle);
-        }
-
-        free(data.Payload);
-        pthread_rwlock_unlock(encrypterArguments->Lock);
     }
 
-    free(clearString);
-    free(key);
+    List_Free(&Queues);
+    free(ClearString);
+    free(Key);
 }
 
-void RecycleData(char *encryptedData, int* encryptedDataLength, int strLength, char *clearString, char *key,
-                 struct timespec* timeout, unsigned int timeoutSeconds, time_t* lastRecycle) {
-    CreatePrintableString(clearString, strLength);
-    MTA_get_rand_data(key,strLength/8);
-    MTA_encrypt(key,strLength/8, clearString, strLength, encryptedData, encryptedDataLength);
-    clock_gettime(CLOCK_REALTIME, timeout);
-    timeout->tv_sec += timeoutSeconds;
-    time(lastRecycle);
+void SendCurrentData(mqd_t queue)
+{
+    NewPasswordMessage msg;
 
-    printf("Recycled data [clearString=%s]\n", clearString);
+    msg.EncryptedDataLength = EncryptedDataLength;
+    msg.StringLength = StrLength;
+    memcpy(msg.EncryptedData, EncryptedData, EncryptedDataLength);
+
+    mq_send(queue, &msg, sizeof(NewPasswordMessage), 0);
+}
+
+void RecycleData() {
+    CreatePrintableString(ClearString, StrLength);
+    MTA_get_rand_data(Key,StrLength/8);
+    MTA_encrypt(Key,StrLength/8, ClearString, StrLength, EncryptedData, &EncryptedDataLength);
+
+    printf("Recycled data [clearString=%s]\n", ClearString);
+
+    for (ListNode* current = Queues.Head->Next; current != Queues.Tail; current = current->Next)
+    {
+        SendCurrentData(current->Data->Queue);
+    }
 }
 
 

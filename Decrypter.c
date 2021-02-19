@@ -5,74 +5,147 @@
 #include <unistd.h>
 #include <malloc.h>
 #include <memory.h>
-#include <pthread.h>
 #include <mta_rand.h>
 #include <mta_crypt.h>
-#include "Decrypter.h"
+#include <limits.h>
+#include <stdlib.h>
+#include <mqueue.h>
 #include "Common.h"
+#include <fcntl.h>
+#include <errno.h>
 
-void WaitForEncryptor(const DecrypterArguments *decrypterArguments);
+char EncryptedData[1024];
+int EncryptedDataLength;
+int StrLength;
+int Counter;
+int Id;
 
-_Noreturn void* Decrypter_Run(void* decrypterArgumentsVoid) {
-    DecrypterArguments* decrypterArguments = (DecrypterArguments*)decrypterArgumentsVoid;
-    printf("Dcrypter started [id=%d]\n", decrypterArguments->Id);
+void ParseArgs(int argc, char* argv[], int* id, int* rounds)
+{
+    int idProvided = FALSE;
 
-    WaitForEncryptor(decrypterArguments);
+    *rounds = INT_MAX;
+
+    char c;
+    while ((c = getopt(argc, argv, "i:n:")) != -1)
+    {
+        switch (c)
+        {
+            case 'i':
+                if (optarg == NULL)
+                {
+                    printf("You must provide value for decrypter index\n");
+                    exit(1);
+                }
+                *id = atoi(optarg);
+                idProvided = TRUE;
+                break;
+            case 'n':
+                if (optarg == NULL)
+                {
+                    printf("You must provide value for string length\n");
+                    exit(1);
+                }
+                *rounds = atoi(optarg);
+                break;
+            default:
+                printf("Unsupported Flag %c with value %s\n", c, optarg != NULL ? optarg : "(NULL)");
+        }
+    }
+
+    if (!idProvided)
+    {
+        printf("You must provide decrypter Id\n");
+        exit(1);
+    }
+}
+
+void ReceiveFromEncryptor(mqd_t clientMessageQueue)
+{
+    NewPasswordMessage message;
+    mq_receive(clientMessageQueue, &message, sizeof(NewPasswordMessage), 0);
+
+    EncryptedDataLength = message.EncryptedDataLength;
+    memcpy(EncryptedData, message.EncryptedData, EncryptedDataLength);
+    StrLength = message.StringLength;
+    Counter = 0;
+    printf("Encrypted data was reset [Id=%d]\n", Id);
+}
+
+void TryReceiveFromEncryptor(mqd_t clientMessageQueue)
+{
+    struct mq_attr attr = {0};
+    mq_getattr(clientMessageQueue, &attr);
+    if (attr.mq_curmsgs > 0)
+    {
+        ReceiveFromEncryptor(clientMessageQueue);
+    }
+}
+
+void main(int argc, char* argv[]) {
+    int rounds;
+
+    ParseArgs(argc, argv, &Id, &rounds);
+
+    mqd_t serverMessageQueue = mq_open(ServerQueueName, O_WRONLY);
+    char clientMessageQueueName[1024];
+    sprintf(clientMessageQueueName, "clientQueue_%d", Id);
+    mq_unlink(clientMessageQueueName);
+    mqd_t clientMessageQueue = mq_open(clientMessageQueueName, O_EXCL | O_CREAT | O_RDONLY);
+
+    if (clientMessageQueue == EEXIST)
+    {
+        printf("ClientId already exists [Id=%d]", Id);
+        exit(1);
+    }
+
+    printf("Dcrypter started [Id=%d]\n", Id);
+
+    ServerRequest connectionRequest;
+    connectionRequest.Type = Connect;
+    connectionRequest.DecrypterId = Id;
+    strcpy(connectionRequest.Payload,clientMessageQueueName);
+
+    mq_send(serverMessageQueue,&connectionRequest, sizeof(ServerRequest), 0);
+
+    ReceiveFromEncryptor(clientMessageQueue);
 
     int decryptedStringLength;
     char decryptedString[4096];
-    char lastKnownEncryptedData[4096];
     InitArray(decryptedString, 4096);
-    InitArray(lastKnownEncryptedData, 4096);
 
-    int lastKnownEncryptedDataLength = *decrypterArguments->EncryptedDataLength;
-    char* guessedKey = (char*)malloc(decrypterArguments->StrLength/8 + 1);
+    char* guessedKey = (char*)malloc(StrLength/8 + 1);
 
-    memcpy(lastKnownEncryptedData, decrypterArguments->EncryptedData, *decrypterArguments->EncryptedDataLength);
-    int counter = 0;
-    while (TRUE)
+    while (rounds > 0)
     {
-        pthread_rwlock_rdlock(decrypterArguments->Lock);
-        if (*decrypterArguments->EncryptedDataLength != lastKnownEncryptedDataLength || memcmp(lastKnownEncryptedData, decrypterArguments->EncryptedData, *decrypterArguments->EncryptedDataLength) != 0)
-        {
-            counter = 0;
-            memcpy(lastKnownEncryptedData, decrypterArguments->EncryptedData, *decrypterArguments->EncryptedDataLength);
-            lastKnownEncryptedDataLength = *decrypterArguments->EncryptedDataLength;
-
-            printf("Encrypted data was reset [id=%d]\n", decrypterArguments->Id);
-        }
-        pthread_rwlock_unlock(decrypterArguments->Lock);
-
-        counter++;
-        MTA_get_rand_data(guessedKey,decrypterArguments->StrLength/8);
-        MTA_decrypt(guessedKey,decrypterArguments->StrLength/8, lastKnownEncryptedData, lastKnownEncryptedDataLength, decryptedString, &decryptedStringLength);
+        TryReceiveFromEncryptor(clientMessageQueue);
+        Counter++;
+        MTA_get_rand_data(guessedKey,StrLength/8);
+        MTA_decrypt(guessedKey,StrLength/8, EncryptedData, EncryptedDataLength, decryptedString, &decryptedStringLength);
 
         if (IsPrintable(decryptedString,decryptedStringLength))
         {
-            printf("Decrypter %d found printable string %s after %d retries\n", decrypterArguments->Id, decryptedString, counter);
-            pthread_mutex_lock(decrypterArguments->isEmptyLock);
-            QueueData data;
-            data.DecrypterId = decrypterArguments->Id;
-            data.Payload = (char*)malloc(decryptedStringLength);
-            strcpy(data.Payload,decryptedString);
-            ConcurrentQueue_Enqueue(decrypterArguments->Queue,data);
-            pthread_mutex_unlock(decrypterArguments->isEmptyLock);
+            printf("Decrypter %d found printable string %s after %d retries [RoundsLeft=%d]\n", Id, decryptedString, Counter, rounds);
+            ServerRequest guess;
+            guess.Type = Guess;
+            guess.DecrypterId = Id;
+            strcpy(guess.Payload, decryptedString);
 
-            pthread_cond_broadcast(decrypterArguments->isEmptyCondition);
+            mq_send(serverMessageQueue,&guess, sizeof(ServerRequest), 0);
+            rounds--;
         }
     }
 
+    ServerRequest disconnectRequest;
+    disconnectRequest.Type = Disconnect;
+    disconnectRequest.DecrypterId = Id;
+    strcpy(disconnectRequest.Payload, clientMessageQueueName);
+    mq_send(serverMessageQueue,&disconnectRequest, sizeof(ServerRequest), 0);
+
+    mq_close(serverMessageQueue);
+    mq_close(clientMessageQueue);
+    mq_unlink(clientMessageQueueName);
     free(guessedKey);
 }
 
-void WaitForEncryptor(const DecrypterArguments *decrypterArguments) {
 
-    pthread_mutex_lock(decrypterArguments->shouldStartLock);
-    if (*decrypterArguments->EncryptedDataLength == 0)
-    {
-        printf("Waiting for start signal [id=%d]\n", decrypterArguments->Id);
-        pthread_cond_wait(decrypterArguments->shouldStartCondition, decrypterArguments->shouldStartLock);
-        printf("Start signal recieved [id=%d]\n", decrypterArguments->Id);
-    }
-    pthread_mutex_unlock(decrypterArguments->shouldStartLock);
-}
