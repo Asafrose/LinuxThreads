@@ -14,3 +14,4 @@ Instructions:
 P.S
    there is a known tini tiny itsy bitsy problem with process syncronization when using small number of decrypters (proven to happen with 1 decryptor).
    you can either ignore or ignore :) 
+   Because of that Gabi told us to add sleep in the launcher.c

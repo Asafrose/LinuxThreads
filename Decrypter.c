@@ -117,16 +117,16 @@ void main(int argc, char* argv[]) {
     connectionRequest.DecrypterId = Id;
     strcpy(connectionRequest.Payload,clientMessageQueueName);
 
-    printf("sending to server started\n");
+    printf("Decrypter %d - sending to server started\n", Id);
     int res = mq_send(serverMessageQueue,(char*)&connectionRequest, sizeof(ServerRequest), 0);
-    printf("sending to server finished\n");
+    printf("Decrypter %d - sending to server finished\n", Id);
     if( res == -1 )
     {
         printf("Decrypter %d - Couldn't send message to servers mq. Failed with errno=%d", Id, errno);
     }
-    printf("waiting for server started\n");
+    printf("Decrypter %d - waiting for server started\n", Id);
     ReceiveFromEncryptor(clientMessageQueue);
-    printf("waiting for server finished\n");
+    printf("Decrypter %d - waiting for server finished\n", Id);
 
     int decryptedStringLength;
     char decryptedString[4096];
@@ -134,7 +134,6 @@ void main(int argc, char* argv[]) {
 
     char* guessedKey = (char*)malloc(StrLength/8 + 1);
 
-    printf("starting loop\n");
     while (rounds > 0)
     {
         TryReceiveFromEncryptor(clientMessageQueue);

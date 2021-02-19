@@ -98,6 +98,8 @@ int main(int argc, char* argv[]) {
         exit(errno);
     }
 
+
+    sleep(1); // Gabi told us to add the sleep
     for (int i = 0; i < numberOfDecryptors; ++i)
     {
         char decryptorId[1024];
