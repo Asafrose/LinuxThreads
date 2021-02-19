@@ -84,6 +84,7 @@ void CreatePrintableString(char* str, int length)
 
 void HandleConnect(ServerRequest* request)
 {
+    printf("Received Connect request from id %d", request->DecrypterId);
     mqd_t queue = mq_open(request->Payload, O_WRONLY);
 
     List_Add(&Queues, queue, request->Payload, request->DecrypterId);
@@ -106,6 +107,7 @@ void HandleGuess(ServerRequest* request)
 
 void HandleDisconnect(ServerRequest* request)
 {
+    printf("Received disconnect request from id %d", request->DecrypterId);
     List_Remove(&Queues, request->DecrypterId);
 }
 
@@ -136,7 +138,16 @@ void main(int argc, char* argv[])
     List_Init(&Queues);
 
     mq_unlink(ServerQueueName);
-    mqd_t serverQueue = mq_open(ServerQueueName,O_RDONLY | O_CREAT);
+    struct mq_attr queueAttribute = {0};
+    queueAttribute.mq_maxmsg = 10;
+    queueAttribute.mq_msgsize = sizeof(ServerRequest);
+    mqd_t serverQueue = mq_open(ServerQueueName,O_RDONLY | O_CREAT, S_IRWXU | S_IRWXG, &queueAttribute);
+
+    if (serverQueue == -1)
+    {
+        printf("failed creating messageQueue errno=%d\n", errno);
+        exit(errno);
+    }
 
     printf("Encrypter started\n");
     ClearString = (char*)malloc(StrLength + 1);
@@ -152,9 +163,13 @@ void main(int argc, char* argv[])
         tm.tv_sec += timeout;
         ssize_t receiveResult = mq_timedreceive(serverQueue, &request, sizeof(ServerRequest), 0, &tm);
 
-        if (receiveResult == ETIMEDOUT)
+        if (receiveResult == -1)
         {
-            RecycleData();
+            printf("failed to send message errno=%d\n", errno);
+            if (errno == ETIMEDOUT)
+            {
+                RecycleData();
+            }
         }
         else
         {

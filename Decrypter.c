@@ -89,11 +89,14 @@ void main(int argc, char* argv[]) {
 
     mqd_t serverMessageQueue = mq_open(ServerQueueName, O_WRONLY);
     char clientMessageQueueName[1024];
-    sprintf(clientMessageQueueName, "clientQueue_%d", Id);
+    sprintf(clientMessageQueueName, "/clientQueue_%d", Id);
     mq_unlink(clientMessageQueueName);
-    mqd_t clientMessageQueue = mq_open(clientMessageQueueName, O_EXCL | O_CREAT | O_RDONLY);
+    struct mq_attr queueAttribute = {0};
+    queueAttribute.mq_maxmsg = 10;
+    queueAttribute.mq_msgsize = sizeof(NewPasswordMessage);
+    mqd_t clientMessageQueue = mq_open(clientMessageQueueName, O_EXCL | O_CREAT | O_RDONLY, S_IRWXU | S_IRWXG, &queueAttribute);
 
-    if (clientMessageQueue == EEXIST)
+    if (clientMessageQueue == -1 && errno == EEXIST)
     {
         printf("ClientId already exists [Id=%d]", Id);
         exit(1);
@@ -125,7 +128,7 @@ void main(int argc, char* argv[]) {
 
         if (IsPrintable(decryptedString,decryptedStringLength))
         {
-            printf("Decrypter %d found printable string %s after %d retries [RoundsLeft=%d]\n", Id, decryptedString, Counter, rounds);
+            printf("Decrypter %d - found printable string %s after %d retries [RoundsLeft=%d]\n", Id, decryptedString, Counter, rounds);
             ServerRequest guess;
             guess.Type = Guess;
             guess.DecrypterId = Id;
@@ -136,6 +139,7 @@ void main(int argc, char* argv[]) {
         }
     }
 
+    printf("Decrypter %d - rounds finished, disconnecting.\n", Id);
     ServerRequest disconnectRequest;
     disconnectRequest.Type = Disconnect;
     disconnectRequest.DecrypterId = Id;

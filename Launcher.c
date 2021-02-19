@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <limits.h>
 #include <unistd.h>
+#include <errno.h>
 #include "Common.h"
 
 void ParseArgs(int argc, char* argv[], int* numberOfDecryptors, int* strLength, int* timeout, int* rounds)
@@ -83,13 +84,16 @@ int main(int argc, char* argv[]) {
     sprintf(t,"%d", timeout);
     sprintf(n,"%d", rounds);
 
-    pid = vfork();
+    pid = fork();
     if (pid == 0) // Encrypter
     {
-        char encrypterProgram[] = "./Compiled/Encrypter.out";
+        char encrypterProgram[] = "./Encrypter.out";
         char* argv[] = {encrypterProgram, "-l", l, "-t", t, 0};
-        execv(encrypterProgram,argv);
-        exit(0);
+        int res = execv(encrypterProgram,argv);
+        if (res == -1)
+        {
+            printf("failed launching decrypter errno=%d\n", errno);
+        }
     }
 
     for (int i = 0; i < numberOfDecryptors; ++i)
@@ -97,13 +101,16 @@ int main(int argc, char* argv[]) {
         char decryptorId[1024];
         sprintf(decryptorId, "%d", i);
 
-        pid = vfork();
+        pid = fork();
         if (pid == 0)
         {
-            char decrypterProgram[] = "./Compiled/Decrypter.out";
-            char argv[] = {decrypterProgram, "-i", decryptorId, "-n", n, 0};
-            execv(decrypterProgram,argv);
-            exit(0);
+            char decrypterProgram[] = "./Decrypter.out";
+            char* argv[] = {decrypterProgram, "-i", decryptorId, "-n", n, 0};
+            int res = execv(decrypterProgram,argv);
+            if (res == -1)
+            {
+                printf("failed launching decrypter errno=%d\n", errno);
+            }
         }
     }
 
